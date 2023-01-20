@@ -13,8 +13,8 @@ Usage::
 ]====]
 local job_count = 0;
 
-if not dfhack.isMapLoaded() then
-    qerror('canceljobs requires a map to be loaded')
+if df.global.gamemode ~= df.game_mode.DWARF or not dfhack.isMapLoaded() then
+    qerror('canceljobs requires a fortress map to be loaded')
 end
 
 for _, unit in pairs(df.global.world.units.active) do
