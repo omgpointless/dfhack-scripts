@@ -148,7 +148,8 @@ local function add_squad_stats(panel,stats) -- rename function
     return panel
 end
 
-local function add_unit_skills(panel, skills)
+local function get_unit_military_skills(skills)
+    local skill_texts = {}
     for _, skill in ipairs(skills) do
         local job_skill = df.job_skill.attrs[skill.id]
 
@@ -159,22 +160,12 @@ local function add_unit_skills(panel, skills)
 
         local skill_caption = job_skill.caption_noun;
         local list_item = ('%s %s'):format(skill_rating.caption, skill_caption)
-        print(list_item)
 
-        --panel:addviews(widgets.Label{
-        --    text=(list_item),
-        --    auto_width=true,
-        --    frame={l=0}
-        --})
-        -- why does this lag the input?
-        --table.insert(panel.subviews, widgets.Label{
-        --    text=(list_item),
-         --   auto_width=true,
-         --   frame={l=0}
-        --})
+        table.insert(skill_texts, { text = list_item})
+        table.insert(skill_texts, NEWLINE)
     end
-    --view:updateSubviewLayout(panel)
-    return panel
+
+    return skill_texts
 end
 
 local function toggle_panel_visibility(wrapper, base_id, selected_id)
@@ -188,24 +179,29 @@ local function toggle_panel_visibility(wrapper, base_id, selected_id)
     wrapper.subviews[('%s%s'):format(base_id, id)].visible = true
 end
 
-local SUB_FRAME_STYLE = copyall(gui.GREY_LINE_FRAME)
-SUB_FRAME_STYLE.signature_pen = false
+local FRAMESTYLE_SUBPANEL = copyall(gui.PANEL_FRAME)
+local FRAMESTYLE_WINDOW = copyall(gui.WINDOW_FRAME)
+FRAMESTYLE_SUBPANEL.signature_pen = false
+FRAMESTYLE_WINDOW.signature_pen = false
 
 -- Squad view GUI
-MilitaryReportSquad = defclass(MilitaryReportSquad, widgets.Window)
-MilitaryReportSquad.ATTRS{
+MilitaryReportSquadScreen = defclass(MilitaryReportSquadScreen, widgets.Window)
+MilitaryReportSquadScreen.ATTRS{
     lockable=false,
     frame={l=0, r=0, t=0, b=0},
+    resizable=false,
+    frame_style = FRAMESTYLE_WINDOW,
+    frame_title = "Test"
 }
 
-function MilitaryReportSquad:init()
+function MilitaryReportSquadScreen:init()
     local unit_panels = {}
     for unitCount = 1, 10 do
         local unit_subviews = {}
-        table.insert(unit_subviews, widgets.Label{
-            text=('Skills %d'):format(unitCount),
-            frame={l=0, t=0},
-            auto_width=true,
+        table.insert(unit_subviews, widgets.WrappedLabel{
+            text='',
+            frame={l=0, r=0, t=2},
+            view_id=("unit_skills_label")
         })
         local skills_unit_panel = widgets.Panel{
             subviews = unit_subviews,
@@ -214,14 +210,14 @@ function MilitaryReportSquad:init()
             visible=false,
             autoarrange_subviews=true,
         }
-        --skills_unit_panel = add_unit_skills(stats_unit_panel)
+
         table.insert(unit_panels, skills_unit_panel)
     end
 
     local wrapper_panel = widgets.Panel{
         view_id='wrapper',
-        frame={l=0, r=0, t=13, b=0},
-        frame_style=SUB_FRAME_STYLE,
+        frame={l=0, t=13, b=2},
+        frame_style=FRAMESTYLE_SUBPANEL,
         frame_inset = {t=0, l=1, r=1},
         subviews=unit_panels
     }
@@ -235,12 +231,12 @@ function MilitaryReportSquad:init()
             },
             widgets.List{
                 view_id='list',
-                frame={l=0, t=2},
+                frame={l=0, t=2, h=12},
                 on_select=self:callback('view_unit_stats'),
             }
         },
         view_id = "unit_list_panel",
-        frame={t=0, h=12},
+        frame={t=0, b=2,l=0, r=0},
     }
 
     self:addviews{
@@ -249,10 +245,11 @@ function MilitaryReportSquad:init()
     }
 end
 
-function MilitaryReportSquad:show(choice)
+function MilitaryReportSquadScreen:show(choice)
     self.selected_squad = choice.data
     self.visible = true
-    -- list, set choices.
+    self.frame_title = choice.text
+    -- TODO: Error handling stuff.
     local choices = {}
     print(self.selected_squad)
     for i, u in ipairs(squad_entries[self.selected_squad].units) do
@@ -262,69 +259,62 @@ function MilitaryReportSquad:show(choice)
             weapon_name = get_item_type_name(u.weapon_item)
         end
         table.insert(choices, {text=('%d. %s (%s)'):format(i, u.name, weapon_name), data=i})
-        local wrapper = self.subviews.wrapper.subviews[('%s%s'):format('skills_unit_', i)]
+        local wrapper = self.subviews.wrapper.subviews[('%s%s'):format('skills_unit_', i)] -- TODO: Refactor
         local label_count = #wrapper.subviews
         print(("view_unit_stats, label_count: %d"):format(label_count))
-        if label_count == 1 then
-            add_unit_skills(wrapper, squad_entries[self.selected_squad].units[i].skills)
-            wrapper:updateLayout()
-        end
+        --if label_count == 1 then
+        local unit_military_skills = get_unit_military_skills(squad_entries[self.selected_squad].units[i].skills)
+        --
+        wrapper.subviews.unit_skills_label:setText(unit_military_skills)
+        wrapper:updateLayout()
+
     end
     self.subviews.list:setChoices(choices)
-    --self.frame_parent_rect
-
-    --[self.selected_squad].units
-
-
-
     self:setFocus(true)
     self:updateLayout()
 end
 
-function MilitaryReportSquad:hide()
+function MilitaryReportSquadScreen:hide()
     self:setFocus(false)
     self.visible = false
 end
 
-function MilitaryReportSquad:onInput(keys)
-    print("report squad input")
+function MilitaryReportSquadScreen:onInput(keys)
     if keys.LEAVESCREEN or  keys._MOUSE_R_DOWN then
         self:hide()
+        return true
     end
 
-    MilitaryReportSquad.super.onInput(self, keys)
+    MilitaryReportSquadScreen.super.onInput(self, keys)
     return true
 end
 
-function MilitaryReportSquad:view_unit_stats(_, option)
-    local pos = option.data
-    local wrapper = self.subviews.wrapper
-    --print(wrapper)
-    toggle_panel_visibility(wrapper, 'skills_unit_', pos)
+function MilitaryReportSquadScreen:view_unit_stats(_, option)
+    toggle_panel_visibility(self.subviews.wrapper, 'skills_unit_', option.data)
 end
 
-
-
 -- Main GUI
-MilitaryReport = defclass(MilitaryReport, gui.ZScreen)
+MilitaryReport = defclass(MilitaryReport, widgets.Window)
+MilitaryReport.ATTRS {
+    frame_title='Military report',
+    frame={w=80, h=40},
+    resizable=true
+}
 
 function MilitaryReport:init()
+    get_military_report() -- TODO: Rename
+    general_stats = update_general_stats() -- TODO Refactor.
     local squad_list_panel = widgets.Panel{
         subviews = {
-            widgets.Label{
-                text='Squads',
-                frame={l=0, t=0},
-                auto_width=true,
-            },
             widgets.List{
                 view_id='list',
-                frame={l=0, t=2},
+                frame={l=0, t=0},
                 on_submit=self:callback('view_squad'),
                 on_select=self:callback('view_squad_stats'),
             }
         },
         view_id = "squad_list_panel",
-        frame={t=0, h=8},
+        frame={t=0, h=12},
     }
 
     -- Add panel for "ALL" stats
@@ -364,28 +354,21 @@ function MilitaryReport:init()
 
     local wrapper_panel = widgets.Panel{
         view_id='wrapper_panel',
-        frame={t=9, l=0, r=0, b=2},
-        frame_style=SUB_FRAME_STYLE,
+        frame={l=0, b=2, h=10},
+        frame_style=FRAMESTYLE_SUBPANEL,
         frame_inset = {t=0, l=1, r=1},
         subviews=squad_panels
     }
 
-    local window = widgets.Window{
-        frame={w=64, h=32},
-        frame_title='Military report',
-        resizable=true,
-    }
-
-    window:addviews{
+    self:addviews{
         squad_list_panel,
         wrapper_panel,
-        MilitaryReportSquad{
+        MilitaryReportSquadScreen{
             view_id='military_report_squad',
             visible=false,
-        },
+        }
     }
 
-    self:addviews{window}
 end
 
 function MilitaryReport:view_squad(_, option)
@@ -395,25 +378,6 @@ end
 function MilitaryReport:view_squad_stats(_, option)
     local wrapper = self.subviews.wrapper_panel
     toggle_panel_visibility(wrapper, 'stats_squad_', option.data)
-end
-
-function MilitaryReport:onDismiss()
-    view = nil
-end
-
-function MilitaryReport:onInput(keys)
-   if self:inputToSubviews(keys) then return true end
-
-   if keys.LEAVESCREEN or keys._MOUSE_R_DOWN then
-        self:dismiss()
-        return true
-   end
-
-    MilitaryReport.super.onInput(self, keys)
-end
-
-function MilitaryReport:onRenderFrame(dc, rect)
-    self:renderParent()
 end
 
 function MilitaryReport:postUpdateLayout()
@@ -432,7 +396,6 @@ function MilitaryReport:update_squad_list()
     self.subviews.list:setChoices(items)
     self.subviews.list:updateLayout()
 end
-
 
 -- Data gathering methods
 local function check_weapon(unit_entry)
@@ -466,21 +429,6 @@ local function add_weapon_rating_stats(rating, squad_entry)
     return squad_entry
 end
 
---TODO
---local function get_list_skills(unit_entry)
-    --for _, skill in ipairs(skills) do
-    --    local job_skill = df.job_skill.attrs[skill.id]
-
-        --local skill_rating = df.skill_rating.attrs[skill.rating]
-        --if (skill.rating > df.skill_rating.Legendary) then
-        --    skill_rating = df.skill_rating.attrs[df.skill_rating.Legendary]
-        --end
-
-        --local skill_caption = job_skill.caption_noun;
-        --local list_itemn = ('%s %s'):format(skill_rating.caption, skill_caption)
-    --end
---end
-
 local function check_skills(unit_entry)
     local skills = {}
 
@@ -508,7 +456,7 @@ local function check_squad(squad)
         squad = squad,
         name = get_squad_name(squad),
         units = {},
-        stats = copyall(BASE_STATS)
+        stats = copyall(BASE_STATS) -- How to do this in LUA?
     }
 
     for _, position in ipairs(squad.positions) do
@@ -548,6 +496,19 @@ function get_military_report()
     end
 end
 
-get_military_report()
-general_stats = update_general_stats()
-view = view or MilitaryReport{}:show()
+MilitaryReportScreen = defclass(MilitaryReportScreen, gui.ZScreen)
+MilitaryReportScreen.ATTRS = {
+    focus_path = 'military-report',
+}
+
+function MilitaryReportScreen:init()
+    self:addviews{
+        MilitaryReport{}
+    }
+end
+
+function MilitaryReportScreen:onDismiss()
+    view = nil
+end
+
+view = view and view:raise() or MilitaryReportScreen{}:show()
