@@ -22,7 +22,7 @@ end
 
 for _, job in utils.listpairs(df.global.world.jobs.list) do
     if dfhack.job.getWorker(job) then
-        if not dfhack.job.removeWorker(job, 1) then
+        if not dfhack.job.removeWorker(job, 10) then
             dfhack.job.removeJob(job)
         end
         job_count = job_count + 1

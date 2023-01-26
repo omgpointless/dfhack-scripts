@@ -9,7 +9,11 @@ end
 if not unit then
     qerror("This tool requires you to have a unit selected")
 else
-    local creature_id = df.global.world.raws.creatures.all[unit.race].creature_id
-    print(('Creature race is %s'):format(creature_id))
+    if unit.race then
+        local creature_id = df.global.world.raws.creatures.all[unit.race].creature_id
+        print(('Creature race is %s'):format(creature_id))
+    else
+        qerror("Could not find a race for this unit")
+    end
 end
 
