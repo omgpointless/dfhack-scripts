@@ -8,16 +8,39 @@ if df.global.gamemode ~= df.game_mode.DWARF or not dfhack.isMapLoaded() then
     qerror('military-report requires a fortress map to be loaded')
 end
 
--- Data
-local BASE_STATS = {
-    soldier_count = 0,
-    missing_weapon_count = 0,
-    highly_trained_count = 0,
-    medium_trained_count = 0,
-    low_trained_count = 0,
-    badly_trained_count = 0
+-- 'Class' construction
+local function __construct(o, p)
+    o = o or {}
+    setmetatable(o, p)
+    p.__index = p
+    return o
+end
+
+-- 'Classes'
+-- TODO
+SquadEntry = {
+    squad = nil,
+    name = nil,
+    units = nil,
+    stats = nil
 }
-local general_stats = {}
+function SquadEntry:new(o)
+    return __construct(o, self)
+end
+
+Stats = {
+        soldier_count = 0,
+        missing_weapon_count = 0,
+        highly_trained_count = 0,
+        medium_trained_count = 0,
+        low_trained_count = 0,
+        badly_trained_count = 0
+}
+function Stats:new(o)
+    return __construct(o, self)
+end
+
+--
 local military_skills = {
     df.job_skill_class.MilitaryWeapon,
     df.job_skill_class.MilitaryUnarmed,
@@ -25,14 +48,17 @@ local military_skills = {
     df.job_skill_class.MilitaryDefense,
     df.job_skill_class.MilitaryMisc
 }
-local squad_entries = {}
+
 local weapon_rating_thresholds = {
     HIGH = df.skill_rating.Legendary,
     MID = df.skill_rating.Accomplished,
     LOW = df.skill_rating.Proficient
 }
 
--- Helpers
+-- Local tables
+local squad_entries = {}
+
+-- Helper methods
 local function get_occupant_unit(occupant)
     local unit = nil
     local fig = df.historical_figure.find(occupant)
@@ -98,11 +124,13 @@ function get_item_type_name(item)
     return name
 end
 
-function update_general_stats()
-    local stats = copyall(BASE_STATS)
+function get_general_stats()
+    local stats = Stats:new()
     for _, squad_entry in ipairs(squad_entries) do
-        for i, _ in pairs(stats) do
-            stats[i] = stats[i] + squad_entry.stats[i]
+        for i, _ in pairs(Stats) do
+            if type(stats[i]) == 'number' then
+                stats[i] = stats[i] + squad_entry.stats[i]
+            end
         end
     end
 
@@ -161,7 +189,8 @@ local function get_unit_military_skills(skills)
         local skill_caption = job_skill.caption_noun;
         local list_item = ('%s %s'):format(skill_rating.caption, skill_caption)
 
-        table.insert(skill_texts, { text = list_item})
+        -- TODO: Refactor. Shouldnt manipulate data here
+        table.insert(skill_texts, { text = list_item, pen=COLOR_GREEN})
         table.insert(skill_texts, NEWLINE)
     end
 
@@ -179,8 +208,8 @@ local function toggle_panel_visibility(wrapper, base_id, selected_id)
     wrapper.subviews[('%s%s'):format(base_id, id)].visible = true
 end
 
-local FRAMESTYLE_SUBPANEL = copyall(gui.PANEL_FRAME)
-local FRAMESTYLE_WINDOW = copyall(gui.WINDOW_FRAME)
+local FRAMESTYLE_SUBPANEL = copyall(gui.MEDIUM_FRAME)
+local FRAMESTYLE_WINDOW = copyall(gui.PANEL_FRAME)
 FRAMESTYLE_SUBPANEL.signature_pen = false
 FRAMESTYLE_WINDOW.signature_pen = false
 
@@ -190,8 +219,7 @@ MilitaryReportSquadScreen.ATTRS{
     lockable=false,
     frame={l=0, r=0, t=0, b=0},
     resizable=false,
-    frame_style = FRAMESTYLE_WINDOW,
-    frame_title = "Test"
+    frame_style = FRAMESTYLE_WINDOW
 }
 
 function MilitaryReportSquadScreen:init()
@@ -201,7 +229,7 @@ function MilitaryReportSquadScreen:init()
         table.insert(unit_subviews, widgets.WrappedLabel{
             text='',
             frame={l=0, r=0, t=2},
-            view_id=("unit_skills_label")
+            view_id=("skills_label")
         })
         local skills_unit_panel = widgets.Panel{
             subviews = unit_subviews,
@@ -245,29 +273,23 @@ function MilitaryReportSquadScreen:init()
     }
 end
 
+-- TODO: Error handling stuff.
+-- TODO: Handle opening "all"
 function MilitaryReportSquadScreen:show(choice)
     self.selected_squad = choice.data
     self.visible = true
     self.frame_title = choice.text
-    -- TODO: Error handling stuff.
+
     local choices = {}
-    print(self.selected_squad)
     for i, u in ipairs(squad_entries[self.selected_squad].units) do
-        -- body
+        local wrapper = self.subviews.wrapper.subviews[('%s%s'):format('skills_unit_', i)] -- TODO: Refactor
+        local skills = get_unit_military_skills(squad_entries[self.selected_squad].units[i].skills)
         local weapon_name = "none"
         if u.weapon_item then
             weapon_name = get_item_type_name(u.weapon_item)
         end
         table.insert(choices, {text=('%d. %s (%s)'):format(i, u.name, weapon_name), data=i})
-        local wrapper = self.subviews.wrapper.subviews[('%s%s'):format('skills_unit_', i)] -- TODO: Refactor
-        local label_count = #wrapper.subviews
-        print(("view_unit_stats, label_count: %d"):format(label_count))
-        --if label_count == 1 then
-        local unit_military_skills = get_unit_military_skills(squad_entries[self.selected_squad].units[i].skills)
-        --
-        wrapper.subviews.unit_skills_label:setText(unit_military_skills)
-        wrapper:updateLayout()
-
+        wrapper.subviews.skills_label:setText(skills)
     end
     self.subviews.list:setChoices(choices)
     self:setFocus(true)
@@ -302,8 +324,11 @@ MilitaryReport.ATTRS {
 }
 
 function MilitaryReport:init()
-    get_military_report() -- TODO: Rename
-    general_stats = update_general_stats() -- TODO Refactor.
+    get_report()
+    local general_stats = get_general_stats()
+    local squad_stats_panels = {}
+
+    -- Panel containing list of squads
     local squad_list_panel = widgets.Panel{
         subviews = {
             widgets.List{
@@ -317,9 +342,8 @@ function MilitaryReport:init()
         frame={t=0, h=12},
     }
 
-    -- Add panel for "ALL" stats
-    local squad_panels = {}
-    local squad_stats_all_panel = widgets.Panel{
+    -- Panel for "All" stats
+    local stats_all_panel = widgets.Panel{
         subviews = {
             widgets.Label{
                 text='ALL',
@@ -330,10 +354,10 @@ function MilitaryReport:init()
         view_id = "stats_squad_all",
         frame={t=0}
     }
-    squad_stats_all_panel = add_squad_stats(squad_stats_all_panel, general_stats)
-    table.insert(squad_panels, squad_stats_all_panel)
+    stats_all_panel = add_squad_stats(stats_all_panel, general_stats)
+    table.insert(squad_stats_panels, stats_all_panel) -- All
 
-    -- Add stats panel for all squads.
+    -- Add a stats panel for every squad.
     for i, squad_entry in ipairs(squad_entries) do
         local view_name = (('stats_squad_%s'):format(i))
         local squad_stats_panel = widgets.Panel{
@@ -349,15 +373,16 @@ function MilitaryReport:init()
             visible=false
         }
         squad_stats_panel = add_squad_stats(squad_stats_panel, squad_entry.stats)
-        table.insert(squad_panels, squad_stats_panel)
+        table.insert(squad_stats_panels, squad_stats_panel)
     end
 
+    -- Wrapper for all stats panels
     local wrapper_panel = widgets.Panel{
         view_id='wrapper_panel',
         frame={l=0, b=2, h=10},
         frame_style=FRAMESTYLE_SUBPANEL,
         frame_inset = {t=0, l=1, r=1},
-        subviews=squad_panels
+        subviews=squad_stats_panels
     }
 
     self:addviews{
@@ -456,7 +481,7 @@ local function check_squad(squad)
         squad = squad,
         name = get_squad_name(squad),
         units = {},
-        stats = copyall(BASE_STATS) -- How to do this in LUA?
+        stats = Stats:new{}
     }
 
     for _, position in ipairs(squad.positions) do
@@ -470,11 +495,12 @@ local function check_squad(squad)
                 weapon_item=nil,
                 weapon_rating=-1
             }
-            -- get unit_entry stuff
+
             unit_entry = check_weapon(unit_entry)
             if not unit_entry.has_weapon then
                 squad_entry.stats.missing_weapon_count = squad_entry.stats.missing_weapon_count + 1
             end
+
             unit_entry = check_skills(unit_entry)
             squad_entry = add_weapon_rating_stats(unit_entry.weapon_rating, squad_entry)
 
@@ -486,7 +512,7 @@ local function check_squad(squad)
     return squad_entry
 end
 
-function get_military_report()
+function get_report()
     local squad_list = get_squads()
     for _, squad in ipairs(squad_list) do
         local squad_entry = check_squad(squad)
